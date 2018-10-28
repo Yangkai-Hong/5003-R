@@ -1,0 +1,42 @@
+---
+title: "week1_tutorial"
+author: "Likun Cui(41725041)"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: html_document
+
+---
+
+
+```{r}
+setwd("/Users/likuncui/Downloads/5003/Data_w1/")
+#(2) read data
+data<-read.delim("communities.data",sep=",",header=FALSE);
+names<-read.delim("communities.names",head= FALSE);
+
+#generating response
+response<-data[,ncol(data)]
+summary (response)
+boxplot(response)
+hist(response,xlab="Crime rate") 
+sd(response)
+
+#selecting variables containing no missing values
+selected<-(colSums(data=="?")==0)
+datComplete<-data[,selected]
+names[selected,]
+
+# selecting variables that are numeric
+darNumeric.raw<-datComplete[,-2]
+datNumeric<-apply(darNumeric.raw, 2, as.numeric)
+
+# use a loop to calculate correlation of each variable to the response variable
+correlationVector <- c()
+for(i in 1:ncol(datNumeric)) {
+  correlationVector <- c(correlationVector, cor(datNumeric[,i], response))
+}
+names(correlationVector) <- colnames(datNumeric)
+
+# sort the variable by correlation from high to low and select the top 9
+newNames<- names[selected,]
+newNames[-2][order(abs(correlationVector), decreasing = TRUE)[1:9]]
+```

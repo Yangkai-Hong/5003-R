@@ -1,0 +1,149 @@
+# Demonstration on using k-nearest neighbor classifier for two-class data classification
+
+## Create sumulation dataset
+```{r}
+# create positive class sample with 2 descriptive features
+set.seed(3)
+f1 <- rnorm(100, mean=6, sd = 1)
+set.seed(4)
+f2 <- rnorm(100, mean=6, sd = 1)
+P.data <- cbind(f1, f2)
+
+# create positive class sample with 2 descriptive features
+set.seed(7)
+f1 <- rnorm(300, mean=4, sd = 1)
+set.seed(8)
+f2 <- rnorm(300, mean=4, sd = 1)
+N.data <- cbind(f1, f2)
+
+# combine all samples
+data.mat <- data.frame(rbind(P.data, N.data), Class=rep(c("P", "N"), time=c(nrow(P.data), nrow(N.data))))
+rownames(data.mat) <- paste("s", 1:(nrow(P.data)+nrow(N.data)), sep="")
+
+# plot data
+plot(P.data, col="red", pch=16, ylim=c(0, 9), xlim=c(0, 9))
+points(N.data, col="blue", pch=16)
+```
+
+## Split the data into training (80%) and test sets (20%)
+```{r}
+# Load the "caret" package. This package is used to partition data, training and test classification models etc.
+library(caret)
+set.seed(1)
+inTrain <- createDataPartition(data.mat$Class, p = .8)[[1]]
+dataTrain <- data.mat[ inTrain, ]
+dataTest  <- data.mat[-inTrain, ]
+```
+
+## Build a KNN model using a single feature of "f1"
+```{r}
+# Here we create a logistic regression model using the train() function. For the "method" parameter, "glm" stands for "generalized linear model" and using "glm" correspond to calling the "glm" package. This call will produce a logistic regression model.
+# The trControl parameter gives control of what methods to be used for evaluating and selecting model and how many times such procedure will be repeated. We will introduce model evaluation and selection in later lectures.
+set.seed(1)
+KNN1 <- train(Class ~ f1,
+                     data = dataTrain,
+                     method = "knn",
+                     trControl = trainControl(method = "repeatedcv", 
+                                              repeats = 5))
+
+## Print diagnostic and summary information and statistics fo the model 
+KNN1
+summary(KNN1)
+```
+
+## Build another KNN model using a single feature of "f2"
+```{r}
+set.seed(1)
+KNN2 <- train(Class ~ f2,
+                     data = dataTrain,
+                     method = "knn",
+                     trControl = trainControl(method = "repeatedcv", 
+                                              repeats = 5))
+KNN2
+summary(KNN2)
+```
+
+
+## Build a KNN model using all features
+```{r}
+# Notice that we used the training set of the data to training this and the above two KNN models.
+set.seed(1)
+KNNFull <- train(Class ~ .,
+                     data = dataTrain,
+                     method = "knn",
+                     trControl = trainControl(method = "repeatedcv", 
+                                              repeats = 5))
+
+KNNFull
+summary(KNNFull)
+# Using $ sign to extract the model selected by our "trControl" procedure and print its information
+KNNFull$finalModel
+```
+
+## Prediction on the test set
+```{r}
+# Create prediction function that takes in a KNN model and extract some prediction information from this model on predicting test set and subsequently return these prediction information.
+PredictFunc <- function(model) {
+  results <- data.frame(obs = dataTest$Class)
+  results$prob <- predict(model, dataTest, type = "prob")[, "P"]
+  results$pred <- predict(model, dataTest)
+  results$Label <- ifelse(results$obs == "P",
+                              "True Outcome: positive", 
+                              "True Outcome: negative")
+  return(results)
+}
+
+# Now use the three models that we created above to perform classification on the test set of the data. 
+results1 <- PredictFunc(KNN1)
+results2 <- PredictFunc(KNN2)
+resultsFull <- PredictFunc(KNNFull)
+```
+
+## Using "pROC" package to evaluate, compare and visualize performance of each model. 
+```{r Fig2, fig.align='center',fig.width=5,fig.height=5}
+# perform evaluation using pROC package
+library(pROC)
+ROC1 <- roc(results1$obs, results1$prob)
+ROC2 <- roc(results2$obs, results2$prob)
+ROCFull <- roc(resultsFull$obs, resultsFull$prob)
+
+# calling some useful function to evaluate a model
+auc(ROC1)
+ci.auc(ROC1)
+auc(ROC2)
+ci.auc(ROC2)
+auc(ROCFull)
+ci.auc(ROCFull)
+
+# visualize and compare performance using ROC curve. Note ROC curve stands for "receiver operating characteristic" curve
+plot(ROC1, legacy.axes = TRUE, col="red")
+plot(ROC2, legacy.axes = TRUE, col="blue", add=TRUE)
+plot(ROCFull, legacy.axes = TRUE, col="black", add=TRUE)
+```
+
+
+## create classification decision boundary
+```{r Fig3, fig.align='center',fig.width=5,fig.height=5}
+# plot data
+plot(P.data, col="red", pch=16, ylim=c(0, 9), xlim=c(0, 9))
+points(N.data, col="blue", pch=16)
+
+# mapping decision boundary
+for(x in seq(0, 10, by=0.1)){
+  for(y in seq(0, 10, by=0.1)){
+    t <- cbind(x, y)
+    colnames(t) <- c("f1", "f2")
+    if(predict(KNNFull, t) == 'N') {
+      points(x, y, col="lightblue", cex=0.1)
+    } else {
+      points(x, y, col="orange", cex=0.1)
+    }
+  }
+}
+
+# output session information
+sessionInfo()
+```
+
+
+

@@ -1,0 +1,61 @@
+---
+title: "Tutorial7"
+author: "Yangkai Hong"
+date: "17/09/2018"
+output: html_document
+---
+##The R package “e1071” has the implementation of SVM with a number of kernel choices. Try to classify Ionosphere dataset from “mlbench” package with:
+```{r}
+library(e1071)
+library(mlbench)
+data(Ionosphere)
+```
+###(1) Linear kernel, polynomial kernel with different degrees, and radial basis kernel.
+```{r}
+linear.model <- svm(x=Ionosphere[,-35],y=Ionosphere[,35],kernel='linear',type='C-classification',scale=FALSE)
+poly3.model <- svm(x=Ionosphere[,-35],y=Ionosphere[,35],kernel='polynomial',degree=3,type='C-classification',scale=FALSE)
+poly6.model <- svm(x=Ionosphere[,-35],y=Ionosphere[,35],kernel='polynomial',degree=6,type='C-classification',scale=FALSE)
+radial.model <- svm(x=Ionosphere[,-35],y=Ionosphere[,35],kernel='radial',type='C-classification',scale=FALSE)
+```
+###(2) Benchmark your classification accuracy using 10-fold cross-validation.
+```{r message=FALSE}
+library(caret)
+set.seed(1)
+fold <- createFolds(Ionosphere$Class,k=10)
+linearTrue <- c()
+poly3True <- c()
+poly6True <- c()
+radialTrue <- c()
+for(i in 1:length(fold)){
+  truth <- Ionosphere$Class[fold[[i]]]
+  linearPreds <- predict(linear.model,newdata = Ionosphere[fold[[i]],-35])
+  poly3Preds <- predict(poly3.model,newdata = Ionosphere[fold[[i]],-35])
+  poly6Preds <- predict(poly6.model,newdata = Ionosphere[fold[[i]],-35])
+  radialPreds <- predict(radial.model,newdata = Ionosphere[fold[[i]],-35])
+  linearTrue <- c(linearTrue,sum(linearPreds==truth))
+  poly3True <- c(poly3True,sum(poly3Preds==truth))
+  poly6True <- c(poly6True,sum(poly6Preds==truth))
+  radialTrue <- c(radialTrue,sum(radialPreds==truth))
+}
+cat(c("Linear kernel accuracy:",sum(linearTrue)/nrow(Ionosphere),"\n"))
+cat(c("Polynomial kernel with degree 3 accuracy:",sum(poly3True)/nrow(Ionosphere),"\n"))
+cat(c("Polynomial kernel with degree 6 accuracy:",sum(poly6True)/nrow(Ionosphere),"\n"))
+cat(c("Radial kernel accuracy:",sum(radialTrue)/nrow(Ionosphere),"\n"))
+```
+###(3) Repeat the above classification using LDA with 10-fold cross-validation.
+```{r}
+library(MASS)
+ionosphere <- Ionosphere[,-2] #delete constant column
+lda.model <- lda(Class~.,ionosphere) 
+ldaTrue <- c()
+for(i in 1:length(fold)){
+  truth <- ionosphere$Class[fold[[i]]]
+  ldaPreds <- predict(lda.model,ionosphere[fold[[i]],-34])$posterior[,'good'] 
+  #cat(ldaPreds)
+  lda.decision <- ifelse(ldaPreds > 0.5,'good','bad')
+  ldaTrue <- c(ldaTrue,sum(lda.decision==truth))
+}
+cat(c("LDA accuracy:",sum(ldaTrue)/nrow(ionosphere)))
+```
+###(4) Comment on the linear separability of the data based on the classification result using SVM with different kernels and LDA.
+The linear separability of the data is high. Because accuracy of both linear kernel SVM and LDA are high, while accuracy of polynomial kernel SVM with degree 3 and 6 are low.

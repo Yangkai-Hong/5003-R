@@ -1,0 +1,53 @@
+---
+title: "Tutorial8"
+author: "Yangkai Hong"
+date: "25/09/2018"
+output: html_document
+---
+##The library “mlbench” contains a set of benchmark datasets for learning problems. Install this package and load the Ionosphere dataset from this package by typing “data(Ionosphere)”.
+```{r}
+library(mlbench)
+data("Ionosphere")
+Ionosphere <- Ionosphere[,-1]
+Ionosphere <- Ionosphere[,-1]
+```
+###(1) Partition the dataset into training and test sets (60% and 40%).
+```{r}
+set.seed(1)
+inTrain <- createDataPartition(Ionosphere$Class, p = 0.6)[[1]]
+IonosphereTrain <- Ionosphere[inTrain,]
+IonosphereTest <- Ionosphere[-inTrain,]
+```
+###(2) Using the absolute fold change to filter the data for classification. Plot the number of features included against the classifier performance of kNN and logistic regression on test set.
+```{r}
+IonosphereTrain.byClass <- split(IonosphereTrain[,-33],IonosphereTrain$Class)
+feature.mean.byClass <- sapply(IonosphereTrain.byClass,colMeans)
+# add abs inside log2
+feature.foldChange <- abs(log2(abs(feature.mean.byClass[,1] / feature.mean.byClass[,2]))) 
+feature.sorted <- sort(feature.foldChange,decreasing = TRUE)
+filtered.features1 <- names(feature.sorted)
+features <- c()
+accuracies <- c()
+for(i in 1:length(filtered.features1)){
+  features <- c(features,filtered.features1[i])
+  features
+  knn.filtered <- knn(train = IonosphereTrain[,features],test = IonosphereTest[,features],cl = IonosphereTrain$Class,k=5,prob = TRUE)
+  knn.filtered
+}
+```
+###(3) Repeat the above but using t-statistics to rank and filter the features this time.
+```{r}
+IonosphereTrain.byClass <- split(IonosphereTrain[,-33],IonosphereTrain$Class)
+feature.pvalues <- c()
+for(i in 1:(ncol(IonosphereTrain)-1)){
+  feature.pvalues <- c(feature.pvalues,t.test(IonosphereTrain.byClass[[1]][,i],IonosphereTrain.byClass[[2]][,i])$p.value)
+}
+names(feature.pvalues) <- colnames(IonosphereTrain[,-33])
+filtered.features2 <- names(sort(feature.pvalues))[1:10]
+knn.filtered <- knn(IonosphereTrain[,filtered.features2],IonosphereTest[,filtered.features2],IonosphereTrain$Class,k=5,prob = TRUE)
+table(knn.filtered,IonosphereTest$Class)
+```
+###(4) Compare the results from using absolute fold change and t-statistics. How many features should be included according to each method? Does your initial partition of training and test sets have anything to do with the selected features?
+```{r}
+
+```

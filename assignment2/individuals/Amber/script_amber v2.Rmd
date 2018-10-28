@@ -1,0 +1,170 @@
+---
+title: "Amber's Report"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Highlights
+1. Feature creation - STEVEN AND KURNI
+2. data pre-processing - standardisation
+3. feature selection - PCA, 19 PC selected
+4. Positive-unlabled learning - steven's method and correction factor (Yang et al., 2016)
+5. imbalanded data - constructed an ensemble classifier by creating 200 base classifiers (SVM) and trainning each of them with a balanced data that sampled from the orginal dataset (Yang et al., 2016)
+
+### 1. Data loading
+
+```{r}
+data <- read.csv("processed_data_with_motif_negtive_cluster_new.csv", sep = ",")
+```
+
+### 2. Data pre-processing
+
+```{r}
+
+#standardize numeric variables
+standardize <- function(mat) {
+ means <- apply(mat, 1, mean)
+ stds <- apply(mat, 1, sd)
+ tmp <- sweep(mat, 1, means, FUN="-")
+ mat.stand <- sweep(tmp, 1, stds, FUN="/")
+ return(mat.stand)
+ }
+data.scaled <- standardize(data[,-c(1:14,21,69:72)])
+
+#PCA
+data.pca <- prcomp(data.scaled,
+                 center = TRUE,
+                 scale. = TRUE) 
+std = data.pca$sdev
+var <- std^2
+var_exp = var/sum(var)
+plot(cumsum(var_exp), xlab = "Principal Component",
+              ylab = "Cumulative Proportion of Variance Explained",
+              type = "b")
+```
+
+```{r}
+#Choose the first 19 PC
+sum(var_exp[1:19])
+#0.9994939
+
+#trainning dataset
+data.after.pca = data.frame(is_akt=data$is_akt, akt_neg_prob=data$akt_neg_prob, 
+                            is_mtor=data$is_mtor, mtor_neg_prob =data$mtor_neg_prob,
+                            data.pca$x)
+data.after.pca = data.after.pca[,1:23]
+
+akt.pos = data.after.pca[data.after.pca["is_akt"]==1,-c(3,4)]
+akt.neg = data.after.pca[data.after.pca["akt_neg_prob"]==1,-c(3,4)]
+mtor.pos = data.after.pca[data.after.pca["is_mtor"]==1,-c(1,2)]
+mtor.neg = data.after.pca[data.after.pca["mtor_neg_prob"]==1,-c(1,2)]
+
+#testing dataset
+data.test = data.after.pca[,-c(1:4)]
+```
+
+### 3. Trainning function - ensemble classifier with correction factor
+
+```{r}
+library(caret)
+library(e1071)
+
+train_and_cf = function(selected_kernel,polyDegree,posData,negData){
+#initialise result matrix and correction factor list
+result.matrix = matrix(0, 12062, 200)
+cf = c()
+
+#train 200 base classifiers (SVM)
+for (i in 1:200){ 
+  pos.train = posData
+  neg.train = negData[sample(1:dim(negData)[1], 22, replace=TRUE),] #randomly select unlabled samples with replacement
+  train = rbind(pos.train,neg.train)
+  
+  #split sampled data to training (2/3) and testing set (1/3)
+  inTrain <- createDataPartition(train[,1], p = 2/3)[[1]]
+  train.train = train[inTrain,]
+  train.test = train[-inTrain,]
+
+  #train SVM model with polynomial kernel
+  svm.model <- svm(train.train[,-c(1:2)], y=train.train[,1],kernel=selected_kernel,
+                       degree=polyDegree, type="C-classification", 
+                       scale = FALSE,probability = TRUE)
+  #get prediction probability of the test set
+  predTest <- predict(svm.model, train.test[,-c(1:2)], probability=TRUE)
+
+  #calculate correction factors
+  pos_idx = which(train.test[,1] == 1)
+  cf = c(cf,mean(attr(predTest, "prob")[,"1"][pos_idx]))
+  
+  #predict with the base classifier
+  pred <- predict(svm.model, data.test, probability=TRUE)
+  
+  #save result to matrix
+  result.matrix[,i] = attr(pred, "prob")[,"1"]
+}
+
+#apply correction factor
+avg_prob_after_correction = result.matrix %*% (1/cf)/200
+
+return(cbind(data[1], avg.prob = avg_prob_after_correction))
+}
+
+```
+
+### 4. Evaluation function
+
+```{r}
+evaluation = function(threshold = 0.5, result_from_model,commonSite) {
+  commonSite$modelResult <- with(result_from_model,
+                               result_from_model$avg.prob[match(commonSite$Name,
+                                                               result_from_model$identifier)])
+  truth = c()
+  result = c()
+  for (i in 1:nrow(commonSite)){
+    truth = c(truth, ifelse(commonSite$Full.model.predict[i]>threshold,1,0))
+    result = c(result, ifelse(commonSite$modelResult[i]>threshold,1,0))
+  }
+  
+  TP <- c(sum((truth == result)[truth == 1]))
+  TN <- c(sum((truth == result)[truth == 0]))
+  FP <-  c(sum((truth != result)[truth == 0]))
+  FN <-  c(sum((truth != result)[truth == 1]))
+  
+  spec = TN/(TN+FP)*100
+  sens = TP/(TP+FN)*100
+  
+  sprintf("specificity = %s , sensitivity = %s"
+          ,round(spec,2),round(sens,2))
+  
+}
+```
+
+### 5. Train and Evaluate
+```{r}
+#load the 2016 result of the phosphorylation sites in our dataset
+data.2016.akt <- read.csv("2016 result (akt).csv", sep = ",")
+data.2016.mtor <- read.csv("2016 result (mTOR).csv", sep = ",")
+
+#evaluation - akt
+akt.result = train_and_cf("polynomial",2,akt.pos,akt.neg)
+evaluation(0.5,akt.result, data.2016.akt)
+
+#evaluation - mTOR
+mtor.result = train_and_cf("polynomial",2,mtor.pos,mtor.neg)
+evaluation(0.5,mtor.result, data.2016.mtor)
+```
+
+### 6. Export result
+
+Code for exporting prediction results.
+
+```{r}
+#result_export = cbind(akt.result,mtor.result)
+#write.table(result_export, file="/Users/anqifeng/Documents/Amber's documents/STAT5003 Statistical Computing/Assignment 2/result_amber.csv", sep=",", col.names=FALSE)
+```
+
+### 7. Reference
+Yang, P., Humphrey, S., James, D., Yang, Y. and Jothi, R. (2016). Positive-unlabeled ensemble learning for kinase substrate prediction from dynamic phosphoproteomics data. Bioinformatics, 32(2), pp.252-259.
